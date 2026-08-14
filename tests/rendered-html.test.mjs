@@ -24,6 +24,7 @@ test("server-renders the Itaewon Research Radar", async () => {
   assert.match(html, /이태원의 변화를/);
   assert.match(html, /새로 들어온 자료/);
   assert.match(html, /출처별 수집 상태/);
+  assert.match(html, /시민대책회의 홈페이지 업데이트|희생자 추가 인정/);
   assert.match(html, /og:image/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
