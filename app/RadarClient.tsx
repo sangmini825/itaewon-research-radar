@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Source = { id:string; source_name:string; status:string|null; last_checked:string|null; item_count:number };
 type Item = { id:string; source_id:string; title:string|null; url:string|null; published_at:string|null; collected_at:string|null; author:string|null; raw_text:string|null; content_type:string|null; review_status:string|null; ai_scope:string|null; ai_summary:string|null; ai_importance:number|null; ai_topics:string[]|null; ai_what_changed:string|null; ai_follow_up:string[]|null };
@@ -9,7 +9,8 @@ type LooseEnd = { id:string; question:string; description:string|null; status:st
 type Event = { id:string; title:string; event_date:string|null; status:string|null; scope:string|null; topics:string[]|null; summary:string|null; what_changed:string|null; importance:number|null; follow_up:string[]|null; verified:boolean|null };
 
 export type Feed = { generated_at:string; sources:Source[]; items:Item[]; watchlist:WatchItem[]; loose_ends:LooseEnd[]; events:Event[] };
-type View = "radar" | "topics" | "watchlist" | "questions";
+type View = "radar" | "topics" | "watchlist" | "questions" | "review";
+type Decision = "accepted" | "hold" | "excluded";
 
 const fallbackTopics = (item: Item) => {
   if (item.ai_topics?.length) return item.ai_topics;
@@ -43,6 +44,9 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const [sourceFilter,setSourceFilter]=useState("all");
   const [topicFilter,setTopicFilter]=useState("all");
   const [selected,setSelected]=useState<Item|null>(null);
+  const [decisions,setDecisions]=useState<Record<string,Decision>>({});
+  useEffect(()=>{ try { setDecisions(JSON.parse(localStorage.getItem("itaewon-radar-review")||"{}")); } catch {} },[]);
+  const decide=(id:string,decision:Decision)=>setDecisions(current=>{const next={...current,[id]:decision};localStorage.setItem("itaewon-radar-review",JSON.stringify(next));return next});
   const sourceMap=useMemo(()=>new Map((feed?.sources||[]).map(s=>[s.id,s])),[feed]);
   const allTopics=useMemo(()=>Array.from(new Set((feed?.items||[]).flatMap(fallbackTopics))).sort(),[feed]);
   const filtered=useMemo(()=>{
@@ -61,7 +65,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     <header className="topbar">
       <a className="brand" href="#top"><span className="brand-mark">IR</span><span>이태원 리서치 레이더</span></a>
       <nav className="main-nav" aria-label="주요 메뉴">
-        {([['radar','레이더'],['topics','주제'],['watchlist','워치리스트'],['questions','취재 질문']] as [View,string][]).map(([id,label])=><button key={id} className={view===id?'active':''} onClick={()=>setView(id)}>{label}</button>)}
+        {([['radar','레이더'],['topics','주제'],['watchlist','워치리스트'],['questions','취재 질문'],['review','편집 검토']] as [View,string][]).map(([id,label])=><button key={id} className={view===id?'active':''} onClick={()=>setView(id)}>{label}</button>)}
       </nav>
       <div className="topbar-meta"><span className="live-dot"/>매일 08:00 갱신</div>
     </header>
@@ -97,6 +101,8 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     {view==='watchlist'&&<section className="page-section"><div className="section-head"><div><div className="section-label">STATE CHANGE</div><h2>워치리스트</h2></div><p>한 번의 기사보다 상태가 바뀌는 순간을 추적합니다.</p></div><div className="watch-list">{(feed?.watchlist||[]).map(w=><article key={w.id}><div><span className="priority">P{w.priority||3}</span><span>{w.target_type||'issue'}</span></div><h3>{w.target_name}</h3><p>{w.reason||'변화 여부를 정기 확인합니다.'}</p><time>{w.last_change_at?`마지막 변화 ${formatDate(w.last_change_at)}`:'기준 상태 등록'}</time></article>)}{!feed?.watchlist?.length&&<div className="blank-slate"><strong>첫 워치리스트를 준비하고 있습니다.</strong><p>특조위 조사, 피해자 지원, 2차 가해 판결처럼 상태 변화가 중요한 항목이 이곳에 쌓입니다.</p></div>}</div></section>}
 
     {view==='questions'&&<section className="page-section"><div className="section-head"><div><div className="section-label">LOOSE ENDS</div><h2>아직 답하지 못한 질문</h2></div><p>보도 이후에도 남는 질문을 보존해 다음 취재의 출발점으로 삼습니다.</p></div><div className="question-list">{(feed?.loose_ends||[]).map((q,i)=><article key={q.id}><span>{String(i+1).padStart(2,'0')}</span><div><h3>{q.question}</h3><p>{q.description}</p><div className="topic-row">{(q.related_topics||[]).map(t=><span key={t}>{t}</span>)}</div></div><b>P{q.priority||3}</b></article>)}{!feed?.loose_ends?.length&&<div className="blank-slate"><strong>아직 등록된 질문이 없습니다.</strong><p>자료의 ‘후속 확인’ 항목이 편집 검토를 거치면 이곳에 모입니다.</p></div>}</div></section>}
+
+    {view==='review'&&<section className="page-section"><div className="section-head"><div><div className="section-label">EDITORIAL REVIEW</div><h2>편집 검토 대기열</h2></div><p>공개 사이트이므로 현재 결정은 이 브라우저에만 임시 저장됩니다. 로그인 기반 편집 권한을 붙이면 데이터베이스 검토 기록으로 전환할 수 있습니다.</p></div><div className="review-summary"><div><strong>{feed?.items.length||0}</strong><span>검토 대상</span></div><div><strong>{Object.values(decisions).filter(v=>v==='accepted').length}</strong><span>채택</span></div><div><strong>{Object.values(decisions).filter(v=>v==='hold').length}</strong><span>보류</span></div><div><strong>{Object.values(decisions).filter(v=>v==='excluded').length}</strong><span>제외</span></div></div><div className="review-list">{(feed?.items||[]).map(item=><article key={item.id}><div className="review-copy"><div className="item-meta"><span>{shortSource(sourceMap.get(item.source_id)?.source_name||'출처 미상')}</span><time>{formatDate(item.published_at)}</time></div><h3>{item.title}</h3><p>{item.ai_summary||item.raw_text}</p><div className="topic-row">{fallbackTopics(item).map(t=><span key={t}>{t}</span>)}</div></div><div className="review-actions" aria-label="검토 결정"><button className={decisions[item.id]==='accepted'?'selected accept':'accept'} onClick={()=>decide(item.id,'accepted')}>채택</button><button className={decisions[item.id]==='hold'?'selected hold':'hold'} onClick={()=>decide(item.id,'hold')}>보류</button><button className={decisions[item.id]==='excluded'?'selected exclude':'exclude'} onClick={()=>decide(item.id,'excluded')}>제외</button><button onClick={()=>setSelected(item)}>자료 확인</button></div></article>)}</div></section>}
 
     <section className="source-health"><div className="section-head"><div><div className="section-label">COLLECTION HEALTH</div><h2>출처별 수집 상태</h2></div><p>자동 수집 3개 · 연결 준비 2개</p></div><div className="health-grid">{(feed?.sources||[]).map(s=><div className="health-card" key={s.id}><div className={s.item_count>0?'health-light on':'health-light'}/><strong>{shortSource(s.source_name)}</strong><span>{s.item_count>0?`${s.item_count}건 수집`:'연결 준비 중'}</span><time>확인 {formatDate(s.last_checked,true)}</time></div>)}</div></section>
     <footer><span>ITAewON RESEARCH RADAR</span><span>공개 열람 · 원문 출처 표시</span><span>{feed?`데이터 갱신 ${formatDate(feed.generated_at,true)}`:'연결 중'}</span></footer>

@@ -176,12 +176,30 @@ footer span:last-child { text-align: right; }
 .question-list p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .blank-slate { grid-column: 1/-1; padding: 50px 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); }
 .blank-slate p { color: var(--muted); font-size: 12px; }
+.review-summary { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 26px; }
+.review-summary div { display: flex; flex-direction: column; padding: 14px; border-radius: 5px; background: var(--soft); }
+.review-summary strong { font-size: 22px; }
+.review-summary span { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.review-list { border-top: 1px solid var(--line); }
+.review-list article { display: grid; grid-template-columns: minmax(0,1fr) 88px; gap: 24px; padding: 20px 8px; border-bottom: 1px solid var(--line); }
+.review-copy h3 { margin: 7px 0; font-size: 17px; }
+.review-copy > p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.review-actions { display: flex; flex-direction: column; gap: 5px; }
+.review-actions button { border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; background: white; color: var(--muted); cursor: pointer; font-size: 10px; }
+.review-actions button:hover { background: var(--soft); color: var(--ink); }
+.review-actions .selected { color: white; font-weight: 700; }
+.review-actions .selected.accept { border-color: var(--green); background: var(--green); }
+.review-actions .selected.hold { border-color: var(--orange); background: var(--orange); }
+.review-actions .selected.exclude { border-color: #9f2f20; background: #9f2f20; }
 
 @media (max-width: 720px) {
   .topbar-meta { display: none; }
   .main-nav { margin-left: auto; }
   .main-nav button { padding: 6px; font-size: 10px; }
   .hero-stats { grid-template-columns: repeat(2,1fr); }
+  .review-summary { grid-template-columns: repeat(2,1fr); }
+  .review-list article { grid-template-columns: 1fr; }
+  .review-actions { flex-direction: row; flex-wrap: wrap; }
   .topic-grid, .watch-list { grid-template-columns: 1fr; }
   .section-head { align-items: flex-start; flex-direction: column; gap: 12px; }
   .section-head > p { text-align: left; }
