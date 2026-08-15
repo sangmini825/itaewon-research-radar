@@ -50,6 +50,9 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const [searchOpen,setSearchOpen]=useState(false);
   const [visibleCount,setVisibleCount]=useState(PAGE_SIZE);
   const [selected,setSelected]=useState<Item|null>(null);
+  const [readItems,setReadItems]=useState<Set<string>>(new Set());
+  const [favoriteSources,setFavoriteSources]=useState<Set<string>>(new Set());
+  useEffect(()=>{try{setReadItems(new Set(JSON.parse(localStorage.getItem("itaewon-read")||"[]")));setFavoriteSources(new Set(JSON.parse(localStorage.getItem("itaewon-favorites")||"[]")))}catch{}},[]);
   const sourceMap=useMemo(()=>new Map((feed?.sources||[]).map(s=>[s.id,s])),[feed]);
   const filtered=useMemo(()=>{
     const keyword=query.trim().toLowerCase();
@@ -64,6 +67,9 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const activeSources=feed?.sources.filter(s=>s.item_count>0).length||0;
   const duplicateCount=(feed?.items.length||0)-dedupeItems(feed?.items||[]).length;
   const selectedSource=(feed?.sources||[]).find(s=>s.id===sourceFilter);
+  const duplicateGroups=useMemo(()=>{const groups=new Map<string,Item[]>();for(const item of feed?.items||[]){const key=titleKey(item.title);if(key.length<12)continue;groups.set(key,[...(groups.get(key)||[]),item]);}return groups;},[feed]);
+  const openItem=(item:Item)=>{setSelected(item);setReadItems(current=>{const next=new Set(current).add(item.id);localStorage.setItem("itaewon-read",JSON.stringify([...next]));return next;});};
+  const toggleFavorite=(id:string)=>setFavoriteSources(current=>{const next=new Set(current);next.has(id)?next.delete(id):next.add(id);localStorage.setItem("itaewon-favorites",JSON.stringify([...next]));return next;});
   const kindCounts=useMemo(()=>({
     telegram_post:(feed?.items||[]).filter(i=>i.content_type==="telegram_post").length,
     news_article:(feed?.items||[]).filter(i=>i.content_type==="news_article").length,
@@ -100,25 +106,26 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
       <p className="result-count">{filtered.length}개 중 {Math.min(visibleCount,filtered.length)}개 표시{sourceFilter==="all"&&kindFilter==="all"&&duplicateCount>0&&<span> · 중복 {duplicateCount}건 묶음</span>}</p>
       {error&&<div className="error-state">{error}</div>}
       {feed&&filtered.length===0&&<div className="empty-state">조건에 맞는 자료가 없습니다.</div>}
-      <div className="item-list">{visible.map(item=><article className="item-card" key={item.id}>
-        <button className="item-open" onClick={()=>setSelected(item)}>
+      <div className="item-list">{visible.map(item=>{const related=duplicateGroups.get(titleKey(item.title))||[];return <article className={readItems.has(item.id)?"item-card read":"item-card"} key={item.id}>
+        <button className="item-open" onClick={()=>openItem(item)}>
           <div className="item-meta"><span className="kind">{itemKind(item)}</span><span>{shortSource(sourceMap.get(item.source_id)?.source_name||"출처 미상")}</span><time>{formatDate(item.published_at)}</time></div>
           <h3>{item.title||"제목 없음"}</h3>
           <p>{item.ai_summary||item.raw_text||"본문이 없습니다."}</p>
+          {related.length>1&&<span className="duplicate-label">{related.length}개 출처에서 확인</span>}
         </button>
         {item.url&&<a className="source-link" href={item.url} target="_blank" rel="noreferrer" aria-label="원문 열기">↗</a>}
-      </article>)}</div>
+      </article>})}</div>
       {visibleCount<filtered.length&&<button className="more-button" onClick={()=>setVisibleCount(n=>n+PAGE_SIZE)}>더 보기 <span>{filtered.length-visibleCount}</span></button>}
     </section>
 
     <section className="sources" id="sources">
       <div><p className="eyebrow">SOURCES</p><h2>출처</h2></div>
-      <div className="source-list">{(feed?.sources||[]).map(s=><div key={s.id}><span className={s.item_count>0?"status on":"status"}/><div className="source-name"><strong>{shortSource(s.source_name)}</strong><span>{s.collection_url&&s.collection_url!==s.url?<><a href={s.collection_url} target="_blank" rel="noreferrer">배포 채널 ↗</a>{s.url&&<a href={s.url} target="_blank" rel="noreferrer">기관 사이트 ↗</a>}</>:s.url&&<a href={s.url} target="_blank" rel="noreferrer">사이트 ↗</a>}</span></div><span>{s.item_count>0?`${s.item_count}건`:`연결 준비`}</span><time>{formatDate(s.last_checked)}</time></div>)}</div>
+      <div className="source-list">{(feed?.sources||[]).map(s=><div key={s.id}><button className={favoriteSources.has(s.id)?"favorite on":"favorite"} onClick={()=>toggleFavorite(s.id)} aria-label={`${shortSource(s.source_name)} 즐겨찾기`}>★</button><div className="source-name"><strong>{shortSource(s.source_name)}</strong><span>{s.collection_url&&s.collection_url!==s.url?<><a href={s.collection_url} target="_blank" rel="noreferrer">배포 채널 ↗</a>{s.url&&<a href={s.url} target="_blank" rel="noreferrer">기관 사이트 ↗</a>}</>:s.url&&<a href={s.url} target="_blank" rel="noreferrer">사이트 ↗</a>}</span></div><span>{s.item_count>0?`${s.item_count}건`:`연결 준비`}</span><time>{formatDate(s.last_checked)}</time></div>)}</div>
     </section>
 
     <footer><span>공개 원문을 기준으로 정리합니다.</span><span>{feed?`갱신 ${formatDate(feed.generated_at,true)}`:"연결 중"}</span></footer>
     <a className="corner-title" href="#top">ITAEWON</a>
 
-    {selected&&<div className="drawer-backdrop" onMouseDown={()=>setSelected(null)}><aside className="drawer" onMouseDown={e=>e.stopPropagation()} role="dialog" aria-modal="true"><div className="drawer-top"><span>{itemKind(selected)}</span><button className="drawer-close" onClick={()=>setSelected(null)}>닫기 ×</button></div><article className="reader"><p className="eyebrow">{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</p><h2>{selected.title}</h2><div className="drawer-meta"><span>{formatDate(selected.published_at)}</span><span>{selected.author||"작성자 미상"}</span></div><section><h3>내용</h3><div className="drawer-body">{(selected.ai_summary||selected.raw_text||"본문이 없습니다.").split(/\n{2,}|\n(?=[📍▪️•\-])/).filter(Boolean).map((paragraph,index)=><p key={index}>{paragraph.trim()}</p>)}</div></section>{selected.url&&<a className="drawer-link" href={selected.url} target="_blank" rel="noreferrer">원문에서 계속 읽기 ↗</a>}</article></aside></div>}
+    {selected&&<div className="drawer-backdrop" onMouseDown={()=>setSelected(null)}><aside className="drawer" onMouseDown={e=>e.stopPropagation()} role="dialog" aria-modal="true"><div className="drawer-top"><span>{itemKind(selected)}</span><button className="drawer-close" onClick={()=>setSelected(null)}>닫기 ×</button></div><article className="reader"><p className="eyebrow">{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</p><h2>{selected.title}</h2><div className="fact-grid"><div><span>게시일</span><strong>{formatDate(selected.published_at)}</strong></div><div><span>유형</span><strong>{itemKind(selected)}</strong></div><div><span>출처</span><strong>{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</strong></div></div>{(duplicateGroups.get(titleKey(selected.title))||[]).length>1&&<div className="related-sources"><strong>같은 자료를 확인한 출처</strong>{(duplicateGroups.get(titleKey(selected.title))||[]).map(item=><a key={item.id} href={item.url||"#"} target="_blank" rel="noreferrer">{shortSource(sourceMap.get(item.source_id)?.source_name||"출처") } ↗</a>)}</div>}<section><h3>내용</h3><div className="drawer-body">{(selected.ai_summary||selected.raw_text||"본문이 없습니다.").split(/\n{2,}|\n(?=[📍▪️•\-])/).filter(Boolean).map((paragraph,index)=><p key={index}>{paragraph.trim()}</p>)}</div></section>{selected.url&&<a className="drawer-link" href={selected.url} target="_blank" rel="noreferrer">원문에서 계속 읽기 ↗</a>}</article></aside></div>}
   </main>;
 }
