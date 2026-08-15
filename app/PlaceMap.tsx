@@ -5,7 +5,7 @@ import type { Place } from "./RadarClient";
 
 const TYPES = [
   ["all", "전체"], ["bar", "바"], ["restaurant", "음식점"], ["club", "클럽"],
-  ["gallery", "전시장"], ["museum", "미술관"], ["performance", "공연장"],
+  ["gallery", "전시장"], ["museum", "미술관"], ["performance", "공연장"], ["cafe", "카페"], ["shop", "상점"],
 ] as const;
 
 const TYPE_LABEL:Record<string,string> = {

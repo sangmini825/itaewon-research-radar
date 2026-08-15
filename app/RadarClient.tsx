@@ -9,7 +9,8 @@ type WatchItem = { id:string; target_type:string|null; target_name:string; reaso
 type LooseEnd = { id:string; question:string; description:string|null; status:string|null; priority:number|null; related_topics:string[]|null };
 type Event = { id:string; title:string; event_date:string|null; status:string|null; scope:string|null; topics:string[]|null; summary:string|null; what_changed:string|null; importance:number|null; follow_up:string[]|null; verified:boolean|null };
 export type Place = { id:string; name:string; address:string|null; place_type:string|null; latitude:number|null; longitude:number|null; status:string|null; description:string|null; short_summary:string|null; opening_hours:string|null; tags:string[]|null; url:string|null; instagram_url:string|null; verified:boolean|null };
-export type Feed = { generated_at:string; sources:Source[]; items:Item[]; watchlist:WatchItem[]; loose_ends:LooseEnd[]; events:Event[]; places:Place[] };
+type Reading = { id:string; title:string; material_type:string; creator:string|null; publisher:string|null; published_on:string|null; summary:string|null; url:string; access_note:string|null; pages:number|null; duration_minutes:number|null; tags:string[]|null; featured:boolean; verified:boolean; last_verified_at:string|null };
+export type Feed = { generated_at:string; sources:Source[]; items:Item[]; watchlist:WatchItem[]; loose_ends:LooseEnd[]; events:Event[]; places:Place[]; readings:Reading[] };
 
 const PAGE_SIZE = 8;
 
@@ -79,6 +80,8 @@ function eventStatus(item:Item) {
 }
 function eventStatusLabel(item:Item){const status=eventStatus(item);return status==="upcoming"?"예정":status==="ongoing"?"진행 중":status==="ended"?"종료":null;
 }
+const READING_TYPES=[{id:"all",label:"전체"},{id:"book",label:"도서"},{id:"oral",label:"구술·인터뷰"},{id:"forum",label:"토론·포럼"},{id:"report",label:"보고서"},{id:"research",label:"연구"}];
+function readingType(type:string){return READING_TYPES.find(option=>option.id===type)?.label||"읽기 자료";}
 
 export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:string}) {
   const [query,setQuery]=useState("");
@@ -97,6 +100,8 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const [suggestNote,setSuggestNote]=useState("");
   const [suggestType,setSuggestType]=useState("instagram");
   const [suggestState,setSuggestState]=useState("");
+  const [readingFilter,setReadingFilter]=useState("all");
+  const [readingExpanded,setReadingExpanded]=useState(false);
   useEffect(()=>{const frame=requestAnimationFrame(()=>{try{setReadItems(new Set(JSON.parse(localStorage.getItem("itaewon-read")||"[]")));setFavoriteSources(new Set(JSON.parse(localStorage.getItem("itaewon-favorites")||"[]")))}catch{}});return()=>cancelAnimationFrame(frame)},[]);
   useEffect(()=>{document.body.classList.toggle("drawer-open",Boolean(selected));return()=>document.body.classList.remove("drawer-open")},[selected]);
   useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setSelected(null)};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close)},[]);
@@ -122,12 +127,14 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const toggleFavorite=(id:string)=>setFavoriteSources(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);localStorage.setItem("itaewon-favorites",JSON.stringify([...next]));return next;});
   const kindCounts=useMemo(()=>Object.fromEntries(["news","statement","official","event","culture","record"].map(category=>[category,(feed?.items||[]).filter(item=>editorialCategory(item)===category).length])),[feed]);
   const sourceGroups=useMemo(()=>[{id:"public",label:"공공·조사기관"},{id:"civic",label:"시민사회"},{id:"media",label:"언론"},{id:"culture",label:"문화·공간"}].map(group=>({...group,sources:(feed?.sources||[]).filter(source=>sourceGroup(source)===group.id)})),[feed]);
+  const filteredReadings=useMemo(()=>(feed?.readings||[]).filter(material=>readingFilter==="all"||material.material_type===readingFilter),[feed,readingFilter]);
+  const visibleReadings=readingExpanded?filteredReadings:filteredReadings.slice(0,6);
   const submitSuggestion=async(e:React.FormEvent)=>{e.preventDefault();setSuggestState("저장 중…");try{const response=await fetch("https://dbcgtfiohkfsvxxnximj.supabase.co/functions/v1/itaewon-radar-suggest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({url:suggestUrl,note:suggestNote,source_type:suggestType,website:""})});const result=await response.json();if(!response.ok)throw new Error(result.error||"저장 실패");setSuggestState("검토 목록에 저장했습니다.");setSuggestUrl("");setSuggestNote("");}catch(reason){setSuggestState(reason instanceof Error?reason.message:"저장하지 못했습니다.");}};
 
   return <main>
     <header className="topbar">
       <a className="brand" href="#top">공개 자료</a>
-      <nav><a className="toplink" href="#places">공간</a><a className="toplink" href="#sources">출처</a></nav>
+      <nav><a className="toplink" href="#reading">읽기</a><a className="toplink" href="#places">공간</a><a className="toplink" href="#sources">출처</a></nav>
     </header>
 
     <section className="hero" id="top">
@@ -167,6 +174,19 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
         {item.url&&<a className="source-link" href={item.url} target="_blank" rel="noreferrer" aria-label="원문 열기">↗</a>}
       </article>})}</div>
       {visibleCount<filtered.length&&<button className="more-button" onClick={()=>setPagination({count:visibleCount+PAGE_SIZE,key:filterKey})}>더 보기 <span>{filtered.length-visibleCount}</span></button>}
+    </section>
+
+    <section className="reading" id="reading" aria-label="긴 호흡으로 읽는 자료">
+      <div className="reading-head"><div><p className="eyebrow">READING</p><h2>읽기</h2><p>도서와 구술, 토론회 자료집, 보고서처럼 시간을 두고 살펴볼 자료입니다.</p></div><span>{filteredReadings.length}건</span></div>
+      <div className="reading-filters" aria-label="읽기 자료 유형">{READING_TYPES.map(option=>{const count=option.id==="all"?(feed?.readings||[]).length:(feed?.readings||[]).filter(material=>material.material_type===option.id).length;return <button key={option.id} className={readingFilter===option.id?"active":""} onClick={()=>{setReadingFilter(option.id);setReadingExpanded(false)}}>{option.label}<span>{count}</span></button>})}</div>
+      <div className="reading-grid">{visibleReadings.map((material,index)=><article className="reading-card" style={{"--item-index":Math.min(index,6)} as React.CSSProperties} key={material.id}>
+        <div className="reading-meta"><span>{readingType(material.material_type)}</span>{material.published_on&&<time>{new Date(material.published_on).getFullYear()}</time>}{material.pages&&<span>{material.pages}쪽</span>}{material.duration_minutes&&<span>{material.duration_minutes}분</span>}</div>
+        <h3>{material.title}</h3><p className="reading-byline">{[material.creator,material.publisher].filter(Boolean).join(" · ")}</p>
+        {material.summary&&<p className="reading-summary">{material.summary}</p>}
+        {material.tags?.length?<div className="reading-tags">{material.tags.slice(0,3).map(tag=><span key={tag}>#{tag}</span>)}</div>:null}
+        <a href={material.url} target="_blank" rel="noreferrer">{material.access_note||"자료 확인"} ↗</a>
+      </article>)}</div>
+      {!readingExpanded&&filteredReadings.length>6&&<button className="more-button" onClick={()=>setReadingExpanded(true)}>더 보기 <span>{filteredReadings.length-6}</span></button>}
     </section>
 
     <section className="suggestions" aria-label="자료 제보">
