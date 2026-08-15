@@ -1,15 +1,16 @@
 # 이태원 리서치 레이더
 
-10·29 이태원 참사 이후의 움직임, 제도 변화, 지역의 신호를 지속적으로 수집하고 검토하기 위한 공개 리서치 인프라입니다.
+이태원의 기록, 제도 변화, 문화·예술과 지역의 현재를 지속적으로 수집하는 공개 자료 사이트입니다.
 
-현재 사이트는 원문 수집함, 주제별 탐색, 워치리스트, 미해결 취재 질문, 브라우저 임시 편집 검토 기능을 제공합니다. 데이터는 Supabase에서 읽어오며 공개 화면은 읽기 전용입니다.
+현재 사이트는 검색, 자료 유형·출처 필터, 중복 묶음, 읽음 상태와 출처 즐겨찾기를 제공합니다. 데이터는 Supabase에서 읽어오며 공개 화면은 로그인 없는 읽기 전용입니다.
 
 ## 주요 수정 위치
 
 - `app/page.tsx`: Supabase 공개 피드를 서버에서 불러오는 시작 화면
-- `app/RadarClient.tsx`: 검색, 필터, 주제, 워치리스트, 취재 질문, 편집 검토 기능
+- `app/RadarClient.tsx`: 검색, 필터, 중복 묶음, 읽음 상태와 출처 즐겨찾기
 - `app/globals.css`: 노션과 비슷한 간결한 화면 디자인
 - `app/layout.tsx`: 사이트 제목과 공유 미리보기 설정
+- `supabase/functions/itaewon-radar-collect/index.ts`: 출처별 자동 수집기
 - `tests/rendered-html.test.mjs`: 실제 데이터가 서버에서 표시되는지 확인하는 테스트
 
 ## 실행하기
@@ -41,6 +42,12 @@ Supabase에는 다음 표가 준비되어 있습니다.
 
 공개 사이트는 Supabase Edge Function `itaewon-radar-feed`가 선별한 읽기 전용 데이터만 사용합니다. `service_role` 키나 OpenAI API 키를 브라우저 코드에 넣으면 안 됩니다.
 
+## 출처 확장 원칙
+
+새 정보는 `공식 기관 웹페이지 → 업장 공식 웹·예약 페이지 → 공개 SNS 계정 → 매거진·언론` 순서로 확인합니다. SNS나 매거진에서 발견한 정보도 가능한 경우 일정과 장소를 기관 원문과 대조합니다. 인스타그램에만 있는 정보는 관찰 출처로 등록하되 자동 공개보다 검토 대기를 우선합니다.
+
+현재 리움미술관의 현재·예정 전시는 공식 일정 API에서 직접 수집합니다. 다른 업장이나 기관도 `collectors` 배열에 `discover`와 `fetchItem`을 추가하면 매일 수집 작업에 포함할 수 있습니다.
+
 ## 환경설정
 
 로컬 비밀 값은 `.env.local`에 저장하며 Git에 포함되지 않습니다.
@@ -61,4 +68,4 @@ OPENAI_API_KEY=...
 
 ## 공개 사이트
 
-[이태원 리서치 레이더](https://itaewon-research-radar.kr9zrky69b.chatgpt.site)
+[ITAEWON RADAR](https://itaewon-research-radar.sangmini825.workers.dev/)
