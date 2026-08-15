@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PlaceMap from "./PlaceMap";
 
 type Source = { id:string; source_name:string; source_type:string|null; url:string|null; collection_url:string|null; status:string|null; last_checked:string|null; method:string|null; check_interval:string|null; item_count:number };
 type Item = { id:string; source_id:string; title:string|null; url:string|null; published_at:string|null; collected_at:string|null; author:string|null; raw_text:string|null; content_type:string|null; review_status:string|null; ai_scope:string|null; ai_summary:string|null; ai_importance:number|null; ai_topics:string[]|null; ai_what_changed:string|null; ai_follow_up:string[]|null };
 type WatchItem = { id:string; target_type:string|null; target_name:string; reason:string|null; priority:number|null; status:string|null; last_change_at:string|null };
 type LooseEnd = { id:string; question:string; description:string|null; status:string|null; priority:number|null; related_topics:string[]|null };
 type Event = { id:string; title:string; event_date:string|null; status:string|null; scope:string|null; topics:string[]|null; summary:string|null; what_changed:string|null; importance:number|null; follow_up:string[]|null; verified:boolean|null };
-export type Feed = { generated_at:string; sources:Source[]; items:Item[]; watchlist:WatchItem[]; loose_ends:LooseEnd[]; events:Event[] };
+export type Place = { id:string; name:string; address:string|null; place_type:string|null; latitude:number|null; longitude:number|null; status:string|null; description:string|null; short_summary:string|null; opening_hours:string|null; tags:string[]|null; url:string|null; instagram_url:string|null; verified:boolean|null };
+export type Feed = { generated_at:string; sources:Source[]; items:Item[]; watchlist:WatchItem[]; loose_ends:LooseEnd[]; events:Event[]; places:Place[] };
 
 const PAGE_SIZE = 8;
 
@@ -79,7 +81,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const [kindFilter,setKindFilter]=useState("all");
   const [sourceOpen,setSourceOpen]=useState(false);
   const [searchOpen,setSearchOpen]=useState(false);
-  const [visibleCount,setVisibleCount]=useState(PAGE_SIZE);
+  const [pagination,setPagination]=useState({count:PAGE_SIZE,key:""});
   const [selected,setSelected]=useState<Item|null>(null);
   const [readItems,setReadItems]=useState<Set<string>>(new Set());
   const [favoriteSources,setFavoriteSources]=useState<Set<string>>(new Set());
@@ -90,7 +92,9 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const [suggestNote,setSuggestNote]=useState("");
   const [suggestType,setSuggestType]=useState("instagram");
   const [suggestState,setSuggestState]=useState("");
-  useEffect(()=>{try{setReadItems(new Set(JSON.parse(localStorage.getItem("itaewon-read")||"[]")));setFavoriteSources(new Set(JSON.parse(localStorage.getItem("itaewon-favorites")||"[]")))}catch{}},[]);
+  useEffect(()=>{const frame=requestAnimationFrame(()=>{try{setReadItems(new Set(JSON.parse(localStorage.getItem("itaewon-read")||"[]")));setFavoriteSources(new Set(JSON.parse(localStorage.getItem("itaewon-favorites")||"[]")))}catch{}});return()=>cancelAnimationFrame(frame)},[]);
+  useEffect(()=>{document.body.classList.toggle("drawer-open",Boolean(selected));return()=>document.body.classList.remove("drawer-open")},[selected]);
+  useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setSelected(null)};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close)},[]);
   const sourceMap=useMemo(()=>new Map((feed?.sources||[]).map(s=>[s.id,s])),[feed]);
   const filtered=useMemo(()=>{
     const keyword=query.trim().toLowerCase();
@@ -101,7 +105,8 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     });
     return sourceFilter==="all"?clusterItems(matched).items:matched;
   },[feed,query,sourceFilter,kindFilter,scheduleFilter,favoritesOnly,favoriteSources]);
-  useEffect(()=>setVisibleCount(PAGE_SIZE),[query,sourceFilter,kindFilter,scheduleFilter,favoritesOnly]);
+  const filterKey=`${query}|${sourceFilter}|${kindFilter}|${scheduleFilter}|${favoritesOnly}`;
+  const visibleCount=pagination.key===filterKey?pagination.count:PAGE_SIZE;
   const visible=filtered.slice(0,visibleCount);
   const activeSources=feed?.sources.filter(s=>s.item_count>0).length||0;
   const allClusters=useMemo(()=>clusterItems(feed?.items||[]),[feed]);
@@ -109,7 +114,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const selectedSource=(feed?.sources||[]).find(s=>s.id===sourceFilter);
   const duplicateGroups=allClusters.groups;
   const openItem=(item:Item)=>{setSelected(item);setReadItems(current=>{const next=new Set(current).add(item.id);localStorage.setItem("itaewon-read",JSON.stringify([...next]));return next;});};
-  const toggleFavorite=(id:string)=>setFavoriteSources(current=>{const next=new Set(current);next.has(id)?next.delete(id):next.add(id);localStorage.setItem("itaewon-favorites",JSON.stringify([...next]));return next;});
+  const toggleFavorite=(id:string)=>setFavoriteSources(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);localStorage.setItem("itaewon-favorites",JSON.stringify([...next]));return next;});
   const kindCounts=useMemo(()=>({
     telegram_post:(feed?.items||[]).filter(i=>i.content_type==="telegram_post").length,
     news_article:(feed?.items||[]).filter(i=>i.content_type==="news_article").length,
@@ -121,7 +126,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   return <main>
     <header className="topbar">
       <a className="brand" href="#top">공개 자료</a>
-      <a className="toplink" href="#sources">출처</a>
+      <nav><a className="toplink" href="#places">공간</a><a className="toplink" href="#sources">출처</a></nav>
     </header>
 
     <section className="hero" id="top">
@@ -161,13 +166,15 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
         </button>
         {item.url&&<a className="source-link" href={item.url} target="_blank" rel="noreferrer" aria-label="원문 열기">↗</a>}
       </article>})}</div>
-      {visibleCount<filtered.length&&<button className="more-button" onClick={()=>setVisibleCount(n=>n+PAGE_SIZE)}>더 보기 <span>{filtered.length-visibleCount}</span></button>}
+      {visibleCount<filtered.length&&<button className="more-button" onClick={()=>setPagination({count:visibleCount+PAGE_SIZE,key:filterKey})}>더 보기 <span>{filtered.length-visibleCount}</span></button>}
     </section>
 
     <section className="suggestions" aria-label="자료 제보">
       <div><p className="eyebrow">SUGGEST</p><h2>자료 제보</h2><p>인스타그램·매거진·업장 링크를 남기면 공식 원문과 중복을 확인합니다.</p></div>
       <div>{!suggestOpen?<button className="suggest-toggle" onClick={()=>setSuggestOpen(true)}>링크 제보하기</button>:<form className="suggest-form" onSubmit={submitSuggestion}><label>자료 유형<select value={suggestType} onChange={e=>setSuggestType(e.target.value)}><option value="instagram">인스타그램</option><option value="magazine">매거진</option><option value="venue">업장·기관</option><option value="other">기타</option></select></label><label>링크<input type="url" required value={suggestUrl} onChange={e=>setSuggestUrl(e.target.value)} placeholder="https://" /></label><label>메모<textarea value={suggestNote} onChange={e=>setSuggestNote(e.target.value)} placeholder="이태원과의 관련성이나 확인할 내용을 적어 주세요." /></label><input className="honeypot" tabIndex={-1} aria-hidden="true" name="website" /><div className="suggest-actions"><button type="submit">검토 목록에 저장</button><button type="button" onClick={()=>setSuggestOpen(false)}>닫기</button></div>{suggestState&&<p className="suggest-state" role="status">{suggestState}</p>}</form>}</div>
     </section>
+
+    <PlaceMap places={feed?.places||[]} />
 
     <section className="sources" id="sources">
       <div><p className="eyebrow">SOURCES</p><h2>출처</h2></div>
@@ -177,6 +184,6 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     <footer><span>공개 원문을 기준으로 정리합니다.</span><span>{feed?`갱신 ${formatDate(feed.generated_at,true)}`:"연결 중"}</span></footer>
     <a className="corner-title" href="#top">ITAEWON</a>
 
-    {selected&&<div className="drawer-backdrop" onMouseDown={()=>setSelected(null)}><aside className="drawer" onMouseDown={e=>e.stopPropagation()} role="dialog" aria-modal="true"><div className="drawer-top"><span>{itemKind(selected)}</span><button className="drawer-close" onClick={()=>setSelected(null)}>닫기 ×</button></div><article className="reader"><p className="eyebrow">{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</p><h2>{selected.title}</h2><div className="fact-grid"><div><span>{selected.content_type==="culture_event"?"일정 기준":"게시일"}</span><strong>{formatDate(selected.published_at)}</strong></div><div><span>유형</span><strong>{eventStatusLabel(selected)||itemKind(selected)}</strong></div><div><span>출처</span><strong>{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</strong></div></div>{(duplicateGroups.get(selected.id)||[]).length>1&&<div className="related-sources"><strong>같은 소식을 확인한 출처</strong>{(duplicateGroups.get(selected.id)||[]).map(item=><a key={item.id} href={item.url||"#"} target="_blank" rel="noreferrer">{shortSource(sourceMap.get(item.source_id)?.source_name||"출처") } ↗</a>)}</div>}<section><h3>내용</h3><div className="drawer-body">{(selected.ai_summary||selected.raw_text||"본문이 없습니다.").split(/\n{2,}|\n(?=[📍▪️•\-])/).filter(Boolean).map((paragraph,index)=><p key={index}>{paragraph.trim()}</p>)}</div></section>{selected.url&&<a className="drawer-link" href={selected.url} target="_blank" rel="noreferrer">원문에서 계속 읽기 ↗</a>}</article></aside></div>}
+    {selected&&<div className="drawer-backdrop" onMouseDown={()=>setSelected(null)}><aside className="drawer" onMouseDown={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="자료 상세"><div className="drawer-top"><span>{itemKind(selected)}</span><button className="drawer-close" onClick={()=>setSelected(null)}>닫기 ×</button></div><article className="reader"><p className="eyebrow">{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</p><h2>{selected.title}</h2><div className="fact-grid"><div><span>{selected.content_type==="culture_event"?"일정 기준":"게시일"}</span><strong>{formatDate(selected.published_at)}</strong></div><div><span>유형</span><strong>{eventStatusLabel(selected)||itemKind(selected)}</strong></div><div><span>출처</span><strong>{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</strong></div></div>{selected.ai_summary&&<section className="reader-summary"><h3>요약</h3><p>{selected.ai_summary}</p></section>}{(duplicateGroups.get(selected.id)||[]).length>1&&<div className="related-sources"><strong>같은 소식을 확인한 출처</strong>{(duplicateGroups.get(selected.id)||[]).map(item=><a key={item.id} href={item.url||"#"} target="_blank" rel="noreferrer">{shortSource(sourceMap.get(item.source_id)?.source_name||"출처") } ↗</a>)}</div>}<section><h3>{selected.ai_summary?"원문 발췌":"내용"}</h3><div className="drawer-body">{(selected.raw_text||selected.ai_summary||"본문이 없습니다.").split(/\n{2,}|(?<=[.!?。])\s+(?=[가-힣A-Z0-9])|\n(?=[📍▪️•\-])/).filter(Boolean).map((paragraph,index)=><p key={index}>{paragraph.trim()}</p>)}</div></section>{selected.url&&<a className="drawer-link" href={selected.url} target="_blank" rel="noreferrer">원문에서 계속 읽기 ↗</a>}</article></aside></div>}
   </main>;
 }
