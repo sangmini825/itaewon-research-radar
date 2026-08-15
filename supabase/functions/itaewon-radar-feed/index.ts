@@ -19,7 +19,7 @@ Deno.serve(async (request) => {
     const get = (path: string) => fetch(`${supabaseUrl}/rest/v1/${path}`, { headers });
     const [sourcesResponse, itemsResponse, watchResponse, looseResponse, eventsResponse, placesResponse] = await Promise.all([
       get("sources?select=id,source_name,source_type,url,collection_url,status,last_checked,priority,method,check_interval&order=priority.asc,source_name.asc"),
-      get(`raw_items?select=id,source_id,title,url,published_at,collected_at,author,raw_text,content_type,review_status,ai_scope,ai_topics,ai_summary,ai_importance,ai_what_changed,ai_follow_up&order=published_at.desc.nullslast,collected_at.desc&limit=${limit}`),
+      get(`raw_items?select=id,source_id,title,url,published_at,collected_at,author,raw_text,content_type,editorial_category,review_status,ai_scope,ai_topics,ai_summary,ai_importance,ai_what_changed,ai_follow_up&order=published_at.desc.nullslast,collected_at.desc&limit=${limit}`),
       get("watchlist?select=id,target_type,target_name,reason,priority,status,last_change_at&order=priority.asc,created_at.desc"),
       get("loose_ends?select=id,question,description,status,priority,related_topics&status=eq.open&order=priority.asc,created_at.desc"),
       get("events?select=id,title,event_date,status,scope,topics,summary,what_changed,importance,follow_up,verified&order=event_date.desc.nullslast,created_at.desc&limit=100"),

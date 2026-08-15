@@ -7,8 +7,20 @@ type Item = {
   author: string;
   raw_text: string;
   content_type: string;
+  editorial_category?: string;
   review_status: string;
 };
+
+function editorialCategory(item: Item) {
+  if (item.editorial_category) return item.editorial_category;
+  if (item.content_type === "culture_event") return "culture";
+  if (item.content_type === "news_article") return "news";
+  if (item.content_type === "press_release") return "official";
+  const text = `${item.title || ""} ${item.raw_text || ""}`;
+  if (/논\s*평|성명|입장문|입장\b/.test(text)) return "statement";
+  if (/일시\s*:|장소\s*:|기자회견|문화제|간담회|참여를/.test(text)) return "event";
+  return "record";
+}
 
 const siteHeaders = {
   "user-agent": "ITAEWON-Radar/0.4 (+internal research collector)",
@@ -270,7 +282,7 @@ Deno.serve(async (request) => {
         const settled = await Promise.allSettled(unseen.map((url) => collector.fetchItem(url)));
         const items = settled
           .filter((result): result is PromiseFulfilledResult<Item> => result.status === "fulfilled")
-          .map((result) => ({ ...result.value, source_id: sources[0].id }));
+          .map((result) => ({ ...result.value, source_id: sources[0].id, editorial_category: editorialCategory(result.value) }));
         const failed = settled.filter((result) => result.status === "rejected");
 
         if (items.length) {
@@ -308,4 +320,3 @@ Deno.serve(async (request) => {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 });
-

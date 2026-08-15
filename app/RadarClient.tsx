@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import PlaceMap from "./PlaceMap";
 
 type Source = { id:string; source_name:string; source_type:string|null; url:string|null; collection_url:string|null; status:string|null; last_checked:string|null; method:string|null; check_interval:string|null; item_count:number };
-type Item = { id:string; source_id:string; title:string|null; url:string|null; published_at:string|null; collected_at:string|null; author:string|null; raw_text:string|null; content_type:string|null; review_status:string|null; ai_scope:string|null; ai_summary:string|null; ai_importance:number|null; ai_topics:string[]|null; ai_what_changed:string|null; ai_follow_up:string[]|null };
+type Item = { id:string; source_id:string; title:string|null; url:string|null; published_at:string|null; collected_at:string|null; author:string|null; raw_text:string|null; content_type:string|null; editorial_category:string|null; review_status:string|null; ai_scope:string|null; ai_summary:string|null; ai_importance:number|null; ai_topics:string[]|null; ai_what_changed:string|null; ai_follow_up:string[]|null };
 type WatchItem = { id:string; target_type:string|null; target_name:string; reason:string|null; priority:number|null; status:string|null; last_change_at:string|null };
 type LooseEnd = { id:string; question:string; description:string|null; status:string|null; priority:number|null; related_topics:string[]|null };
 type Event = { id:string; title:string; event_date:string|null; status:string|null; scope:string|null; topics:string[]|null; summary:string|null; what_changed:string|null; importance:number|null; follow_up:string[]|null; verified:boolean|null };
@@ -26,13 +26,18 @@ function shortSource(name:string) {
   if (name.includes("빅데이터")) return "용산 빅데이터";
   return name;
 }
-function itemKind(item:Item) {
-  if (item.content_type==="culture_event") return "문화·예술";
-  if (item.content_type==="news_article") return "기사";
-  if (item.content_type==="telegram_post") return "배포 자료";
-  if (item.content_type==="press_release") return "보도자료";
-  return "공개 자료";
+function editorialCategory(item:Item) {
+  if(item.editorial_category)return item.editorial_category;
+  if(item.content_type==="culture_event")return "culture";
+  if(item.content_type==="news_article")return "news";
+  if(item.content_type==="press_release")return "official";
+  const text=`${item.title||""} ${item.raw_text||""}`;
+  if(/논\s*평|성명|입장문|입장\b/.test(text))return "statement";
+  if(/일시\s*:|장소\s*:|기자회견|문화제|간담회|참여를/.test(text))return "event";
+  return "record";
 }
+function itemKind(item:Item){return ({news:"기사",statement:"성명·논평",official:"공식 자료",event:"행사·일정",culture:"문화·예술",record:"기록·소식"} as Record<string,string>)[editorialCategory(item)]||"공개 자료";}
+function sourceGroup(source:Source){const type=source.source_type||"";if(/언론/.test(type))return "media";if(/시민사회/.test(type))return "civic";if(/문화|갤러리|공연장/.test(type))return "culture";return "public";}
 function collectionLabel(source:Source) {
   if (source.source_name.includes("문화·예술")) return "소식 모음 ↗";
   if (source.collection_url?.includes("t.me")) return "배포 채널 ↗";
@@ -101,7 +106,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     const matched=(feed?.items||[]).filter(item=>{
       const haystack=[item.title,item.raw_text,item.author,item.ai_summary].filter(Boolean).join(" ").toLowerCase();
       const status=eventStatus(item);
-      return (sourceFilter==="all"||item.source_id===sourceFilter)&&(kindFilter==="all"||item.content_type===kindFilter)&&(scheduleFilter==="all"||status===scheduleFilter)&&(!favoritesOnly||favoriteSources.has(item.source_id))&&(!keyword||haystack.includes(keyword));
+      return (sourceFilter==="all"||item.source_id===sourceFilter)&&(kindFilter==="all"||editorialCategory(item)===kindFilter)&&(scheduleFilter==="all"||status===scheduleFilter)&&(!favoritesOnly||favoriteSources.has(item.source_id))&&(!keyword||haystack.includes(keyword));
     });
     return sourceFilter==="all"?clusterItems(matched).items:matched;
   },[feed,query,sourceFilter,kindFilter,scheduleFilter,favoritesOnly,favoriteSources]);
@@ -115,12 +120,8 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const duplicateGroups=allClusters.groups;
   const openItem=(item:Item)=>{setSelected(item);setReadItems(current=>{const next=new Set(current).add(item.id);localStorage.setItem("itaewon-read",JSON.stringify([...next]));return next;});};
   const toggleFavorite=(id:string)=>setFavoriteSources(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);localStorage.setItem("itaewon-favorites",JSON.stringify([...next]));return next;});
-  const kindCounts=useMemo(()=>({
-    telegram_post:(feed?.items||[]).filter(i=>i.content_type==="telegram_post").length,
-    news_article:(feed?.items||[]).filter(i=>i.content_type==="news_article").length,
-    press_release:(feed?.items||[]).filter(i=>i.content_type==="press_release").length,
-    culture_event:(feed?.items||[]).filter(i=>i.content_type==="culture_event").length,
-  }),[feed]);
+  const kindCounts=useMemo(()=>Object.fromEntries(["news","statement","official","event","culture","record"].map(category=>[category,(feed?.items||[]).filter(item=>editorialCategory(item)===category).length])),[feed]);
+  const sourceGroups=useMemo(()=>[{id:"public",label:"공공·조사기관"},{id:"civic",label:"시민사회"},{id:"media",label:"언론"},{id:"culture",label:"문화·공간"}].map(group=>({...group,sources:(feed?.sources||[]).filter(source=>sourceGroup(source)===group.id)})),[feed]);
   const submitSuggestion=async(e:React.FormEvent)=>{e.preventDefault();setSuggestState("저장 중…");try{const response=await fetch("https://dbcgtfiohkfsvxxnximj.supabase.co/functions/v1/itaewon-radar-suggest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({url:suggestUrl,note:suggestNote,source_type:suggestType,website:""})});const result=await response.json();if(!response.ok)throw new Error(result.error||"저장 실패");setSuggestState("검토 목록에 저장했습니다.");setSuggestUrl("");setSuggestNote("");}catch(reason){setSuggestState(reason instanceof Error?reason.message:"저장하지 못했습니다.");}};
 
   return <main>
@@ -148,16 +149,15 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
       {sourceOpen&&<div className="source-picker" aria-label="출처 선택"><button className={sourceFilter==="all"?"active":""} onClick={()=>{setSourceFilter("all");setSourceOpen(false)}}>모든 출처 <span>{feed?.items.length||0}</span></button>{(feed?.sources||[]).map(s=><button key={s.id} className={sourceFilter===s.id?"active":""} onClick={()=>{setSourceFilter(s.id);setSourceOpen(false)}}>{shortSource(s.source_name)} <span>{s.item_count}</span></button>)}</div>}
       {searchOpen&&<div className="search-panel"><input autoFocus aria-label="자료 검색" value={query} onChange={e=>setQuery(e.target.value)} placeholder="제목과 내용 검색" />{query&&<button onClick={()=>setQuery("")}>지우기</button>}</div>}
       <div className="kind-filters" aria-label="자료 유형">
-        {[{id:"all",label:"전체",count:feed?.items.length||0},{id:"culture_event",label:"문화·예술",count:kindCounts.culture_event},{id:"telegram_post",label:"텔레그램",count:kindCounts.telegram_post},{id:"news_article",label:"기사",count:kindCounts.news_article},{id:"press_release",label:"보도자료",count:kindCounts.press_release}].map(kind=><button key={kind.id} className={kindFilter===kind.id?"active":""} onClick={()=>{setKindFilter(kind.id);if(kind.id!=="culture_event")setScheduleFilter("all")}}>{kind.label}<span>{kind.count}</span></button>)}
+        {[{id:"all",label:"전체",count:feed?.items.length||0},{id:"news",label:"기사",count:kindCounts.news},{id:"statement",label:"성명·논평",count:kindCounts.statement},{id:"official",label:"공식 자료",count:kindCounts.official},{id:"event",label:"행사·일정",count:kindCounts.event},{id:"culture",label:"문화·예술",count:kindCounts.culture},{id:"record",label:"기록·소식",count:kindCounts.record}].map(kind=><button key={kind.id} className={kindFilter===kind.id?"active":""} onClick={()=>{setKindFilter(kind.id);if(kind.id!=="culture")setScheduleFilter("all")}}>{kind.label}<span>{kind.count}</span></button>)}
       </div>
-      {kindFilter==="telegram_post"&&<p className="channel-note">시민대책회의 공식 공개 텔레그램 채널에서 수집한 게시물입니다.</p>}
-      {kindFilter==="culture_event"&&<p className="channel-note">이태원이 제목에 명시된 전시·공연·축제 소식입니다. 일정과 장소는 원문에서 최종 확인해 주세요.</p>}
-      {kindFilter==="culture_event"&&<div className="schedule-filters" aria-label="행사 상태">{[{id:"all",label:"모든 일정"},{id:"ongoing",label:"진행 중"},{id:"upcoming",label:"예정"},{id:"ended",label:"종료"}].map(option=><button key={option.id} className={scheduleFilter===option.id?"active":""} onClick={()=>setScheduleFilter(option.id)}>{option.label}</button>)}</div>}
+      {kindFilter==="culture"&&<p className="channel-note">전시·공연·축제 소식입니다. 일정과 장소는 원문에서 최종 확인해 주세요.</p>}
+      {kindFilter==="culture"&&<div className="schedule-filters" aria-label="행사 상태">{[{id:"all",label:"모든 일정"},{id:"ongoing",label:"진행 중"},{id:"upcoming",label:"예정"},{id:"ended",label:"종료"}].map(option=><button key={option.id} className={scheduleFilter===option.id?"active":""} onClick={()=>setScheduleFilter(option.id)}>{option.label}</button>)}</div>}
       {favoritesOnly&&<p className="channel-note">별표로 저장한 출처의 자료만 보고 있습니다.</p>}
       <p className="result-count">{filtered.length}개 중 {Math.min(visibleCount,filtered.length)}개 표시{sourceFilter==="all"&&kindFilter==="all"&&duplicateCount>0&&<span> · 중복 {duplicateCount}건 묶음</span>}</p>
       {error&&<div className="error-state">{error}</div>}
       {feed&&filtered.length===0&&<div className="empty-state">{favoritesOnly&&favoriteSources.size===0?"출처 아래의 별표를 눌러 자주 보는 출처를 저장해 주세요.":"조건에 맞는 자료가 없습니다."}</div>}
-      <div className="item-list">{visible.map(item=>{const related=duplicateGroups.get(item.id)||[];const schedule=eventStatusLabel(item);return <article className={readItems.has(item.id)?"item-card read":"item-card"} key={item.id}>
+      <div className="item-list">{visible.map((item,index)=>{const related=duplicateGroups.get(item.id)||[];const schedule=eventStatusLabel(item);return <article className={readItems.has(item.id)?"item-card read":"item-card"} style={{"--item-index":Math.min(index,8)} as React.CSSProperties} key={item.id}>
         <button className="item-open" onClick={()=>openItem(item)}>
           <div className="item-meta"><span className="kind">{itemKind(item)}</span>{schedule&&<span className={`schedule ${eventStatus(item)}`}>{schedule}</span>}<span>{shortSource(sourceMap.get(item.source_id)?.source_name||"출처 미상")}</span><time>{formatDate(item.published_at)}</time></div>
           <h3>{item.title||"제목 없음"}</h3>
@@ -178,7 +178,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
 
     <section className="sources" id="sources">
       <div><p className="eyebrow">SOURCES</p><h2>출처</h2></div>
-      <div className="source-list">{(feed?.sources||[]).map(s=><div key={s.id}><button className={favoriteSources.has(s.id)?"favorite on":"favorite"} onClick={()=>toggleFavorite(s.id)} aria-label={`${shortSource(s.source_name)} 즐겨찾기`}>★</button><div className="source-name"><strong>{shortSource(s.source_name)}</strong><small>{s.source_type||"공개 출처"}</small><span>{s.collection_url&&s.collection_url!==s.url?<><a href={s.collection_url} target="_blank" rel="noreferrer">{collectionLabel(s)}</a>{s.url&&<a href={s.url} target="_blank" rel="noreferrer">기관 사이트 ↗</a>}</>:s.url&&<a href={s.url} target="_blank" rel="noreferrer">사이트 ↗</a>}</span></div><span className={`source-health ${s.status}`}>{s.status==="monitoring"?"관찰 중":s.last_checked?"수집 정상":"연결 준비"}<small>{s.item_count}건</small></span><time>{s.last_checked?formatDate(s.last_checked):"확인 전"}</time></div>)}</div>
+      <div className="source-groups">{sourceGroups.map((group,index)=><details key={group.id} open={index===0}><summary><strong>{group.label}</strong><span>{group.sources.length}개 출처 · {group.sources.reduce((sum,source)=>sum+source.item_count,0)}건</span></summary><div className="source-list">{group.sources.map(s=><div key={s.id}><button className={favoriteSources.has(s.id)?"favorite on":"favorite"} onClick={()=>toggleFavorite(s.id)} aria-label={`${shortSource(s.source_name)} 즐겨찾기`}>★</button><div className="source-name"><strong>{shortSource(s.source_name)}</strong><small>{s.source_type||"공개 출처"}</small><span>{s.collection_url&&s.collection_url!==s.url?<><a href={s.collection_url} target="_blank" rel="noreferrer">{collectionLabel(s)}</a>{s.url&&<a href={s.url} target="_blank" rel="noreferrer">기관 사이트 ↗</a>}</>:s.url&&<a href={s.url} target="_blank" rel="noreferrer">사이트 ↗</a>}</span></div><span className={`source-health ${s.status}`}>{s.status==="monitoring"?"관찰 중":s.last_checked?"수집 정상":"연결 준비"}<small>{s.item_count}건</small></span><time>{s.last_checked?formatDate(s.last_checked):"확인 전"}</time></div>)}</div></details>)}</div>
     </section>
 
     <footer><span>공개 원문을 기준으로 정리합니다.</span><span>{feed?`갱신 ${formatDate(feed.generated_at,true)}`:"연결 중"}</span></footer>
