@@ -20,10 +20,11 @@ test("server-renders the Itaewon Research Radar", async () => {
 
   const html = await response.text();
   assert.match(html, /<html lang="ko">/i);
-  assert.match(html, /<title>이태원 리서치 레이더<\/title>/i);
-  assert.match(html, /이태원의 변화를/);
-  assert.match(html, /새로 들어온 자료/);
-  assert.match(html, /출처별 수집 상태/);
+  assert.match(html, /<title>ITAEWON RADAR<\/title>/i);
+  assert.match(html, /ITAEWON RADAR/);
+  assert.match(html, />자료</);
+  assert.match(html, />출처</);
+  assert.match(html, /더 보기/);
   assert.match(html, /시민대책회의 홈페이지 업데이트|희생자 추가 인정/);
   assert.match(html, /og:image/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
