@@ -18,6 +18,8 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
+      siteName: "ITAEWON RADAR",
+      modifiedTime: "2026-08-15T13:10:00+09:00",
       images: [{ url: shareImage, width: 1200, height: 630, alt: title }],
     },
     twitter: {
