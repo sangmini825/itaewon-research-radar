@@ -25,10 +25,16 @@ function shortSource(name:string) {
   return name;
 }
 function itemKind(item:Item) {
+  if (item.content_type==="culture_event") return "문화·예술";
   if (item.content_type==="news_article") return "기사";
   if (item.content_type==="telegram_post") return "배포 자료";
   if (item.content_type==="press_release") return "보도자료";
   return "공개 자료";
+}
+function collectionLabel(source:Source) {
+  if (source.source_name.includes("문화·예술")) return "소식 모음 ↗";
+  if (source.collection_url?.includes("t.me")) return "배포 채널 ↗";
+  return "수집 목록 ↗";
 }
 function titleKey(value:string|null) {
   return (value||"").toLowerCase().replace(/\[[^\]]+\]|[^0-9a-z가-힣]/g,"").replace(/^논평/,"");
@@ -52,17 +58,18 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
   const [selected,setSelected]=useState<Item|null>(null);
   const [readItems,setReadItems]=useState<Set<string>>(new Set());
   const [favoriteSources,setFavoriteSources]=useState<Set<string>>(new Set());
+  const [favoritesOnly,setFavoritesOnly]=useState(false);
   useEffect(()=>{try{setReadItems(new Set(JSON.parse(localStorage.getItem("itaewon-read")||"[]")));setFavoriteSources(new Set(JSON.parse(localStorage.getItem("itaewon-favorites")||"[]")))}catch{}},[]);
   const sourceMap=useMemo(()=>new Map((feed?.sources||[]).map(s=>[s.id,s])),[feed]);
   const filtered=useMemo(()=>{
     const keyword=query.trim().toLowerCase();
     const matched=(feed?.items||[]).filter(item=>{
       const haystack=[item.title,item.raw_text,item.author,item.ai_summary].filter(Boolean).join(" ").toLowerCase();
-      return (sourceFilter==="all"||item.source_id===sourceFilter)&&(kindFilter==="all"||item.content_type===kindFilter)&&(!keyword||haystack.includes(keyword));
+      return (sourceFilter==="all"||item.source_id===sourceFilter)&&(kindFilter==="all"||item.content_type===kindFilter)&&(!favoritesOnly||favoriteSources.has(item.source_id))&&(!keyword||haystack.includes(keyword));
     });
     return sourceFilter==="all"&&kindFilter==="all"?dedupeItems(matched):matched;
-  },[feed,query,sourceFilter,kindFilter]);
-  useEffect(()=>setVisibleCount(PAGE_SIZE),[query,sourceFilter,kindFilter]);
+  },[feed,query,sourceFilter,kindFilter,favoritesOnly,favoriteSources]);
+  useEffect(()=>setVisibleCount(PAGE_SIZE),[query,sourceFilter,kindFilter,favoritesOnly]);
   const visible=filtered.slice(0,visibleCount);
   const activeSources=feed?.sources.filter(s=>s.item_count>0).length||0;
   const duplicateCount=(feed?.items.length||0)-dedupeItems(feed?.items||[]).length;
@@ -74,6 +81,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     telegram_post:(feed?.items||[]).filter(i=>i.content_type==="telegram_post").length,
     news_article:(feed?.items||[]).filter(i=>i.content_type==="news_article").length,
     press_release:(feed?.items||[]).filter(i=>i.content_type==="press_release").length,
+    culture_event:(feed?.items||[]).filter(i=>i.content_type==="culture_event").length,
   }),[feed]);
 
   return <main>
@@ -85,7 +93,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     <section className="hero" id="top">
       <p className="eyebrow">ITAEWON · PUBLIC SOURCES</p>
       <h1>이태원 관련 자료</h1>
-      <p className="hero-copy">공개된 배포 자료, 행정 자료와 주요 기사를 한곳에서 확인합니다.</p>
+      <p className="hero-copy">기록과 행정 자료에 문화·예술, 지역의 현재를 더해 한곳에서 확인합니다.</p>
       <div className="summary-line"><span>자료 <b>{feed?.items.length??"—"}</b></span><span>연결 출처 <b>{activeSources||"—"}</b></span><span>매일 08:00 갱신</span></div>
     </section>
 
@@ -95,17 +103,20 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
         <div className="tool-buttons">
           <button className={sourceOpen||sourceFilter!=="all"?"active":""} onClick={()=>setSourceOpen(v=>!v)}>출처 <span>{selectedSource?shortSource(selectedSource.source_name):"전체"}</span></button>
           <button className={searchOpen||query?"active":""} onClick={()=>setSearchOpen(v=>!v)}>검색 <span>{query?"적용됨":""}</span></button>
+          <button aria-pressed={favoritesOnly} className={favoritesOnly?"active":""} onClick={()=>setFavoritesOnly(v=>!v)}>저장 <span>{favoriteSources.size||""}</span></button>
         </div>
       </div>
       {sourceOpen&&<div className="source-picker" aria-label="출처 선택"><button className={sourceFilter==="all"?"active":""} onClick={()=>{setSourceFilter("all");setSourceOpen(false)}}>모든 출처 <span>{feed?.items.length||0}</span></button>{(feed?.sources||[]).map(s=><button key={s.id} className={sourceFilter===s.id?"active":""} onClick={()=>{setSourceFilter(s.id);setSourceOpen(false)}}>{shortSource(s.source_name)} <span>{s.item_count}</span></button>)}</div>}
       {searchOpen&&<div className="search-panel"><input autoFocus aria-label="자료 검색" value={query} onChange={e=>setQuery(e.target.value)} placeholder="제목과 내용 검색" />{query&&<button onClick={()=>setQuery("")}>지우기</button>}</div>}
       <div className="kind-filters" aria-label="자료 유형">
-        {[{id:"all",label:"전체",count:feed?.items.length||0},{id:"telegram_post",label:"텔레그램",count:kindCounts.telegram_post},{id:"news_article",label:"기사",count:kindCounts.news_article},{id:"press_release",label:"보도자료",count:kindCounts.press_release}].map(kind=><button key={kind.id} className={kindFilter===kind.id?"active":""} onClick={()=>setKindFilter(kind.id)}>{kind.label}<span>{kind.count}</span></button>)}
+        {[{id:"all",label:"전체",count:feed?.items.length||0},{id:"culture_event",label:"문화·예술",count:kindCounts.culture_event},{id:"telegram_post",label:"텔레그램",count:kindCounts.telegram_post},{id:"news_article",label:"기사",count:kindCounts.news_article},{id:"press_release",label:"보도자료",count:kindCounts.press_release}].map(kind=><button key={kind.id} className={kindFilter===kind.id?"active":""} onClick={()=>setKindFilter(kind.id)}>{kind.label}<span>{kind.count}</span></button>)}
       </div>
       {kindFilter==="telegram_post"&&<p className="channel-note">시민대책회의 공식 공개 텔레그램 채널에서 수집한 게시물입니다.</p>}
+      {kindFilter==="culture_event"&&<p className="channel-note">이태원이 제목에 명시된 전시·공연·축제 소식입니다. 일정과 장소는 원문에서 최종 확인해 주세요.</p>}
+      {favoritesOnly&&<p className="channel-note">별표로 저장한 출처의 자료만 보고 있습니다.</p>}
       <p className="result-count">{filtered.length}개 중 {Math.min(visibleCount,filtered.length)}개 표시{sourceFilter==="all"&&kindFilter==="all"&&duplicateCount>0&&<span> · 중복 {duplicateCount}건 묶음</span>}</p>
       {error&&<div className="error-state">{error}</div>}
-      {feed&&filtered.length===0&&<div className="empty-state">조건에 맞는 자료가 없습니다.</div>}
+      {feed&&filtered.length===0&&<div className="empty-state">{favoritesOnly&&favoriteSources.size===0?"출처 아래의 별표를 눌러 자주 보는 출처를 저장해 주세요.":"조건에 맞는 자료가 없습니다."}</div>}
       <div className="item-list">{visible.map(item=>{const related=duplicateGroups.get(titleKey(item.title))||[];return <article className={readItems.has(item.id)?"item-card read":"item-card"} key={item.id}>
         <button className="item-open" onClick={()=>openItem(item)}>
           <div className="item-meta"><span className="kind">{itemKind(item)}</span><span>{shortSource(sourceMap.get(item.source_id)?.source_name||"출처 미상")}</span><time>{formatDate(item.published_at)}</time></div>
@@ -120,7 +131,7 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
 
     <section className="sources" id="sources">
       <div><p className="eyebrow">SOURCES</p><h2>출처</h2></div>
-      <div className="source-list">{(feed?.sources||[]).map(s=><div key={s.id}><button className={favoriteSources.has(s.id)?"favorite on":"favorite"} onClick={()=>toggleFavorite(s.id)} aria-label={`${shortSource(s.source_name)} 즐겨찾기`}>★</button><div className="source-name"><strong>{shortSource(s.source_name)}</strong><span>{s.collection_url&&s.collection_url!==s.url?<><a href={s.collection_url} target="_blank" rel="noreferrer">배포 채널 ↗</a>{s.url&&<a href={s.url} target="_blank" rel="noreferrer">기관 사이트 ↗</a>}</>:s.url&&<a href={s.url} target="_blank" rel="noreferrer">사이트 ↗</a>}</span></div><span>{s.item_count>0?`${s.item_count}건`:`연결 준비`}</span><time>{formatDate(s.last_checked)}</time></div>)}</div>
+      <div className="source-list">{(feed?.sources||[]).map(s=><div key={s.id}><button className={favoriteSources.has(s.id)?"favorite on":"favorite"} onClick={()=>toggleFavorite(s.id)} aria-label={`${shortSource(s.source_name)} 즐겨찾기`}>★</button><div className="source-name"><strong>{shortSource(s.source_name)}</strong><span>{s.collection_url&&s.collection_url!==s.url?<><a href={s.collection_url} target="_blank" rel="noreferrer">{collectionLabel(s)}</a>{s.url&&<a href={s.url} target="_blank" rel="noreferrer">기관 사이트 ↗</a>}</>:s.url&&<a href={s.url} target="_blank" rel="noreferrer">사이트 ↗</a>}</span></div><span>{s.item_count>0?`${s.item_count}건`:`연결 준비`}</span><time>{formatDate(s.last_checked)}</time></div>)}</div>
     </section>
 
     <footer><span>공개 원문을 기준으로 정리합니다.</span><span>{feed?`갱신 ${formatDate(feed.generated_at,true)}`:"연결 중"}</span></footer>
