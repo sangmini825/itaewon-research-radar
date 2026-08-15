@@ -8,7 +8,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "ITAEWON RADAR";
-  const description = "이태원 관련 공개 배포 자료, 행정 자료와 주요 기사를 원문 중심으로 모읍니다.";
+  const description = "이태원의 기록, 문화·예술, 지역 소식과 공개 자료를 원문 중심으로 모읍니다.";
+  const shareImage = `${origin}/og.png?v=20260815-2`;
 
   return {
     title,
@@ -17,13 +18,13 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
-      images: [{ url: `${origin}/og.png`, width: 1200, height: 630, alt: title }],
+      images: [{ url: shareImage, width: 1200, height: 630, alt: title }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [`${origin}/og.png`],
+      images: [shareImage],
     },
   };
 }
