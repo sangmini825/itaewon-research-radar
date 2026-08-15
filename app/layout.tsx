@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "ITAEWON RADAR";
-  const description = "10·29 이후의 기록과 ITAEWON의 변화를 원문 중심으로 모읍니다.";
+  const description = "이태원 관련 공개 배포 자료, 행정 자료와 주요 기사를 원문 중심으로 모읍니다.";
 
   return {
     title,
