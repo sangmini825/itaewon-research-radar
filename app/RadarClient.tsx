@@ -34,6 +34,7 @@ function itemKind(item:Item) {
 export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:string}) {
   const [query,setQuery]=useState("");
   const [sourceFilter,setSourceFilter]=useState("all");
+  const [kindFilter,setKindFilter]=useState("all");
   const [visibleCount,setVisibleCount]=useState(PAGE_SIZE);
   const [selected,setSelected]=useState<Item|null>(null);
   const sourceMap=useMemo(()=>new Map((feed?.sources||[]).map(s=>[s.id,s])),[feed]);
@@ -41,12 +42,17 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     const keyword=query.trim().toLowerCase();
     return (feed?.items||[]).filter(item=>{
       const haystack=[item.title,item.raw_text,item.author,item.ai_summary].filter(Boolean).join(" ").toLowerCase();
-      return (sourceFilter==="all"||item.source_id===sourceFilter)&&(!keyword||haystack.includes(keyword));
+      return (sourceFilter==="all"||item.source_id===sourceFilter)&&(kindFilter==="all"||item.content_type===kindFilter)&&(!keyword||haystack.includes(keyword));
     });
-  },[feed,query,sourceFilter]);
-  useEffect(()=>setVisibleCount(PAGE_SIZE),[query,sourceFilter]);
+  },[feed,query,sourceFilter,kindFilter]);
+  useEffect(()=>setVisibleCount(PAGE_SIZE),[query,sourceFilter,kindFilter]);
   const visible=filtered.slice(0,visibleCount);
   const activeSources=feed?.sources.filter(s=>s.item_count>0).length||0;
+  const kindCounts=useMemo(()=>({
+    telegram_post:(feed?.items||[]).filter(i=>i.content_type==="telegram_post").length,
+    news_article:(feed?.items||[]).filter(i=>i.content_type==="news_article").length,
+    press_release:(feed?.items||[]).filter(i=>i.content_type==="press_release").length,
+  }),[feed]);
 
   return <main>
     <header className="topbar">
@@ -72,6 +78,10 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
           <input aria-label="자료 검색" value={query} onChange={e=>setQuery(e.target.value)} placeholder="검색" />
         </div>
       </div>
+      <div className="kind-filters" aria-label="자료 유형">
+        {[{id:"all",label:"전체",count:feed?.items.length||0},{id:"telegram_post",label:"텔레그램",count:kindCounts.telegram_post},{id:"news_article",label:"기사",count:kindCounts.news_article},{id:"press_release",label:"보도자료",count:kindCounts.press_release}].map(kind=><button key={kind.id} className={kindFilter===kind.id?"active":""} onClick={()=>setKindFilter(kind.id)}>{kind.label}<span>{kind.count}</span></button>)}
+      </div>
+      {kindFilter==="telegram_post"&&<p className="channel-note">시민대책회의 공식 공개 텔레그램 채널에서 수집한 게시물입니다.</p>}
       <p className="result-count">{filtered.length}개 중 {Math.min(visibleCount,filtered.length)}개 표시</p>
       {error&&<div className="error-state">{error}</div>}
       {feed&&filtered.length===0&&<div className="empty-state">조건에 맞는 자료가 없습니다.</div>}
