@@ -30,24 +30,40 @@ function itemKind(item:Item) {
   if (item.content_type==="press_release") return "보도자료";
   return "공개 자료";
 }
+function titleKey(value:string|null) {
+  return (value||"").toLowerCase().replace(/\[[^\]]+\]|[^0-9a-z가-힣]/g,"").replace(/^논평/,"");
+}
+function dedupeItems(items:Item[]) {
+  const seen=new Set<string>();
+  return items.filter(item=>{
+    const key=titleKey(item.title);
+    if(key.length<12||!seen.has(key)){if(key.length>=12)seen.add(key);return true;}
+    return false;
+  });
+}
 
 export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:string}) {
   const [query,setQuery]=useState("");
   const [sourceFilter,setSourceFilter]=useState("all");
   const [kindFilter,setKindFilter]=useState("all");
+  const [sourceOpen,setSourceOpen]=useState(false);
+  const [searchOpen,setSearchOpen]=useState(false);
   const [visibleCount,setVisibleCount]=useState(PAGE_SIZE);
   const [selected,setSelected]=useState<Item|null>(null);
   const sourceMap=useMemo(()=>new Map((feed?.sources||[]).map(s=>[s.id,s])),[feed]);
   const filtered=useMemo(()=>{
     const keyword=query.trim().toLowerCase();
-    return (feed?.items||[]).filter(item=>{
+    const matched=(feed?.items||[]).filter(item=>{
       const haystack=[item.title,item.raw_text,item.author,item.ai_summary].filter(Boolean).join(" ").toLowerCase();
       return (sourceFilter==="all"||item.source_id===sourceFilter)&&(kindFilter==="all"||item.content_type===kindFilter)&&(!keyword||haystack.includes(keyword));
     });
+    return sourceFilter==="all"&&kindFilter==="all"?dedupeItems(matched):matched;
   },[feed,query,sourceFilter,kindFilter]);
   useEffect(()=>setVisibleCount(PAGE_SIZE),[query,sourceFilter,kindFilter]);
   const visible=filtered.slice(0,visibleCount);
   const activeSources=feed?.sources.filter(s=>s.item_count>0).length||0;
+  const duplicateCount=(feed?.items.length||0)-dedupeItems(feed?.items||[]).length;
+  const selectedSource=(feed?.sources||[]).find(s=>s.id===sourceFilter);
   const kindCounts=useMemo(()=>({
     telegram_post:(feed?.items||[]).filter(i=>i.content_type==="telegram_post").length,
     news_article:(feed?.items||[]).filter(i=>i.content_type==="news_article").length,
@@ -70,19 +86,18 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     <section className="archive" aria-label="수집 자료">
       <div className="archive-tools">
         <div><p className="eyebrow">ARCHIVE</p><h2>자료</h2></div>
-        <div className="filters">
-          <select aria-label="출처 선택" value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}>
-            <option value="all">모든 출처</option>
-            {(feed?.sources||[]).map(s=><option key={s.id} value={s.id}>{shortSource(s.source_name)} · {s.item_count}</option>)}
-          </select>
-          <input aria-label="자료 검색" value={query} onChange={e=>setQuery(e.target.value)} placeholder="검색" />
+        <div className="tool-buttons">
+          <button className={sourceOpen||sourceFilter!=="all"?"active":""} onClick={()=>setSourceOpen(v=>!v)}>출처 <span>{selectedSource?shortSource(selectedSource.source_name):"전체"}</span></button>
+          <button className={searchOpen||query?"active":""} onClick={()=>setSearchOpen(v=>!v)}>검색 <span>{query?"적용됨":""}</span></button>
         </div>
       </div>
+      {sourceOpen&&<div className="source-picker" aria-label="출처 선택"><button className={sourceFilter==="all"?"active":""} onClick={()=>{setSourceFilter("all");setSourceOpen(false)}}>모든 출처 <span>{feed?.items.length||0}</span></button>{(feed?.sources||[]).map(s=><button key={s.id} className={sourceFilter===s.id?"active":""} onClick={()=>{setSourceFilter(s.id);setSourceOpen(false)}}>{shortSource(s.source_name)} <span>{s.item_count}</span></button>)}</div>}
+      {searchOpen&&<div className="search-panel"><input autoFocus aria-label="자료 검색" value={query} onChange={e=>setQuery(e.target.value)} placeholder="제목과 내용 검색" />{query&&<button onClick={()=>setQuery("")}>지우기</button>}</div>}
       <div className="kind-filters" aria-label="자료 유형">
         {[{id:"all",label:"전체",count:feed?.items.length||0},{id:"telegram_post",label:"텔레그램",count:kindCounts.telegram_post},{id:"news_article",label:"기사",count:kindCounts.news_article},{id:"press_release",label:"보도자료",count:kindCounts.press_release}].map(kind=><button key={kind.id} className={kindFilter===kind.id?"active":""} onClick={()=>setKindFilter(kind.id)}>{kind.label}<span>{kind.count}</span></button>)}
       </div>
       {kindFilter==="telegram_post"&&<p className="channel-note">시민대책회의 공식 공개 텔레그램 채널에서 수집한 게시물입니다.</p>}
-      <p className="result-count">{filtered.length}개 중 {Math.min(visibleCount,filtered.length)}개 표시</p>
+      <p className="result-count">{filtered.length}개 중 {Math.min(visibleCount,filtered.length)}개 표시{sourceFilter==="all"&&kindFilter==="all"&&duplicateCount>0&&<span> · 중복 {duplicateCount}건 묶음</span>}</p>
       {error&&<div className="error-state">{error}</div>}
       {feed&&filtered.length===0&&<div className="empty-state">조건에 맞는 자료가 없습니다.</div>}
       <div className="item-list">{visible.map(item=><article className="item-card" key={item.id}>
@@ -104,6 +119,6 @@ export default function RadarClient({feed,error=""}:{feed:Feed|null;error?:strin
     <footer><span>공개 원문을 기준으로 정리합니다.</span><span>{feed?`갱신 ${formatDate(feed.generated_at,true)}`:"연결 중"}</span></footer>
     <a className="corner-title" href="#top">ITAEWON</a>
 
-    {selected&&<div className="drawer-backdrop" onMouseDown={()=>setSelected(null)}><aside className="drawer" onMouseDown={e=>e.stopPropagation()} role="dialog" aria-modal="true"><button className="drawer-close" onClick={()=>setSelected(null)}>닫기 ×</button><p className="eyebrow">{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</p><h2>{selected.title}</h2><div className="drawer-meta"><span>{formatDate(selected.published_at)}</span><span>{selected.author||"작성자 미상"}</span></div><section><h3>내용</h3><p className="drawer-body">{selected.ai_summary||selected.raw_text||"본문이 없습니다."}</p></section>{selected.url&&<a className="drawer-link" href={selected.url} target="_blank" rel="noreferrer">원문 확인 ↗</a>}</aside></div>}
+    {selected&&<div className="drawer-backdrop" onMouseDown={()=>setSelected(null)}><aside className="drawer" onMouseDown={e=>e.stopPropagation()} role="dialog" aria-modal="true"><div className="drawer-top"><span>{itemKind(selected)}</span><button className="drawer-close" onClick={()=>setSelected(null)}>닫기 ×</button></div><article className="reader"><p className="eyebrow">{shortSource(sourceMap.get(selected.source_id)?.source_name||"출처 미상")}</p><h2>{selected.title}</h2><div className="drawer-meta"><span>{formatDate(selected.published_at)}</span><span>{selected.author||"작성자 미상"}</span></div><section><h3>내용</h3><div className="drawer-body">{(selected.ai_summary||selected.raw_text||"본문이 없습니다.").split(/\n{2,}|\n(?=[📍▪️•\-])/).filter(Boolean).map((paragraph,index)=><p key={index}>{paragraph.trim()}</p>)}</div></section>{selected.url&&<a className="drawer-link" href={selected.url} target="_blank" rel="noreferrer">원문에서 계속 읽기 ↗</a>}</article></aside></div>}
   </main>;
 }
